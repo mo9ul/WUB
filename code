@@ -1,0 +1,205 @@
+import tkinter as tk
+from tkinter import messagebox, ttk
+import random
+import time
+import threading
+import pygame
+
+# Pygame 초기화
+pygame.mixer.init()
+
+root = tk.Tk()
+root.title("알람 앱")
+root.geometry("320x320")
+
+alarm_time = None
+task_window = None
+alarm_thread = None
+alarm_checking = False  # 알람 체크 루프 상태를 나타내는 변수
+alarms = []  # 설정된 알람을 저장하는 리스트
+
+default_alarm_sound = "/Users/jun/Desktop/WUB/기상나팔.mp3"
+selected_sound = tk.StringVar(value=default_alarm_sound)
+
+def play_alarm_sound(sound_file):
+    pygame.mixer.music.load(sound_file)
+    pygame.mixer.music.play(-1)  # 반복 재생
+
+def stop_alarm_sound():
+    pygame.mixer.music.stop()
+
+def check_alarm_time():
+    global alarm_thread, alarm_checking
+    if not alarm_checking:
+        return
+    current_time = time.strftime('%H%M')
+    if current_time == alarm_time:
+        if alarm_thread is None or not alarm_thread.is_alive():
+            alarm_thread = threading.Thread(target=lambda: play_alarm_sound(selected_sound.get()))
+            alarm_thread.start()
+        open_task_window()
+    else:
+        root.after(1000, check_alarm_time)
+
+def open_alarm_sound_window():
+    alarm_sound_window = tk.Toplevel(root)
+    alarm_sound_window.geometry("200x150")
+    alarm_sound_window.title("알람음 설정")
+
+    options = [
+        "/Users/jun/Desktop/WUB/기상나팔.mp3", 
+        "/Users/jun/Desktop/WUB/김수미알람.mp3", 
+        "/Users/jun/Desktop/WUB/삐-삐-삐 - 여러번.MP3", 
+        "/Users/jun/Desktop/WUB/삐-삐-삐-삐-빠르게.MP3", 
+        "/Users/jun/Desktop/WUB/아이유알람.mp3"
+    ]
+    dropdown = ttk.Combobox(alarm_sound_window, textvariable=selected_sound, values=options)
+    dropdown.pack(pady=20)
+
+    def confirm_sound_selection():
+        messagebox.showinfo("알람음 설정", "선택하신 알람음으로 설정되었습니다.")
+    
+    confirm_button = tk.Button(alarm_sound_window, text="선택", command=confirm_sound_selection)
+    confirm_button.pack(pady=10)
+
+def open_send_message_window():
+    send_message_window = tk.Toplevel(root)
+    send_message_window.geometry("200x100")
+    send_message_window.title("망신문자 보낼 사람")
+
+def open_task_window():
+    global task_window
+    if task_window is None or not task_window.winfo_exists():
+        task_window = tk.Toplevel(root)
+        task_window.geometry("300x200")
+        task_window.title("기상과제")
+
+        num1 = random.randint(1, 100)
+        num2 = random.randint(1, 100)
+        operation = random.choice(["+", "-"])
+        correct_answer = num1 + num2 if operation == "+" else num1 - num2
+
+        question = f"{num1} {operation} {num2} = ?"
+        label_question = tk.Label(task_window, text=question, font=("Helvetica", 14))
+        label_question.pack(pady=10)
+
+        entry_answer = tk.Entry(task_window, font=("Helvetica", 14))
+        entry_answer.pack(pady=10)
+
+        def check_answer():
+            user_answer = entry_answer.get()
+            try:
+                if int(user_answer) == correct_answer:
+                    messagebox.showinfo("정답", "일어난 거 맞네요~ 오늘도 좋은 하루 보내세요!")
+                    task_window.destroy()
+                    stop_alarm()  # 기상과제를 푸는 동시에 알람 꺼짐
+                    return  # 기상과제 완료 후 바로 리턴하여 다시 기상과제 창이 열리지 않도록 함
+                else:
+                    messagebox.showwarning("오답", "잠이 덜 깼네요. 다시 풀어보세요!")
+                    task_window.destroy()  # 현재 창을 닫고
+                    open_task_window()  # 새로운 과제를 다시 띄움
+            except ValueError:
+                messagebox.showwarning("오류", "숫자를 입력하세요.")
+            
+        submit_button = tk.Button(task_window, text="제출", command=check_answer, font=("Helvetica", 12), padx=10, pady=5)
+        submit_button.pack(pady=10)
+
+        def countdown(time_left):
+            if time_left <= 0:
+                messagebox.showwarning("시간초과", "제 시간안에 문제를 풀지 못하셨군요...잔소리 들을 시간입니다!")
+                task_window.destroy()
+            else:
+                time_left -= 1
+                task_window.after(1000, countdown, time_left)
+
+        countdown(300)
+    else:
+        task_window.lift()
+
+def get_selected_days():
+    selected_days_str = ""
+    for i, day_var in enumerate(selected_days):
+        if day_var.get() == 1:
+            selected_days_str += days_of_week[i]
+    return selected_days_str
+
+def set_alarm():
+    global alarm_time, alarm_checking
+    alarm_time = entry_time.get()
+    if len(alarm_time) != 4 or not alarm_time.isdigit():
+        messagebox.showwarning("경고", "올바른 형식의 시간을 입력하세요.")
+        return
+    hour = int(alarm_time[:2])
+    minute = int(alarm_time[2:])
+    alarm_time_seconds = hour * 3600 + minute * 60
+    current_time_seconds = int(time.strftime("%H")) * 3600 + int(time.strftime("%M")) * 60 + int(time.strftime("%S"))
+    if alarm_time_seconds <= current_time_seconds:
+        messagebox.showwarning("경고", "미래의 시간을 입력하세요.")
+        return
+    messagebox.showinfo("알람 설정", f"{alarm_time[:2]}시 {alarm_time[2:]}분에 알람이 설정되었습니다.")
+    alarms.append((alarm_time, get_selected_days(), selected_sound.get()))
+    alarm_checking = True
+    check_alarm_time()
+
+def stop_alarm():
+    global alarm_thread, alarm_checking
+    alarm_checking = False
+    stop_alarm_sound()  # 알람 소리를 멈춤
+    if alarm_thread is not None and alarm_thread.is_alive():
+        alarm_thread.join()
+
+def open_alarm_list_window():
+    alarm_list_window = tk.Toplevel(root)
+    alarm_list_window.geometry("300x200")
+    alarm_list_window.title("내 알람")
+
+    def delete_alarm(alarm):
+        alarms.remove(alarm)
+        alarm_list_window.destroy()
+        open_alarm_list_window()
+    
+    for alarm in alarms:
+        alarm_time, alarm_days, alarm_sound = alarm
+        alarm_frame = tk.Frame(alarm_list_window)
+        alarm_frame.pack(fill="x", pady=5)
+        
+        alarm_label = tk.Label(alarm_frame, text=f"알람 시간: {alarm_time[:2]}:{alarm_time[2:]}, 요일: {alarm_days}, 알람음: {alarm_sound.split('/')[-1]}", font=("Helvetica", 12))
+        alarm_label.pack(side="left", padx=10)
+        
+        delete_button = tk.Button(alarm_frame, text="삭제", command=lambda a=alarm: delete_alarm(a), font=("Helvetica", 12))
+        delete_button.pack(side="right", padx=10)
+
+time_input_frame = tk.Frame(root)
+time_input_frame.place(relx=0.5, rely=0.3, anchor="center")
+
+label_time = tk.Label(time_input_frame, text="시간 입력 (HHMM 형식):", font=("Helvetica", 12))
+label_time.pack(side="left")
+
+entry_time = tk.Entry(time_input_frame, width=10, font=("Helvetica", 14))
+entry_time.pack(side="left")
+
+confirm_button = tk.Button(root, text="시간 확정", command=set_alarm, font=("Helvetica", 12), padx=10, pady=5)
+confirm_button.place(relx=0.5, rely=0.4, anchor="center")
+
+day_checkboxes_frame = tk.Frame(root)
+day_checkboxes_frame.place(relx=0.5, rely=0.5, anchor="center")
+
+days_of_week = ["월", "화", "수", "목", "금", "토", "일"]
+selected_days = []
+
+for i, day in enumerate(days_of_week):
+    var = tk.IntVar()
+    check_button = tk.Checkbutton(day_checkboxes_frame, text=day, variable=var, font=("Helvetica", 10))
+    check_button.grid(row=0, column=i, padx=2, pady=2)
+    selected_days.append(var)
+
+alarm_setting_button = tk.Button(root, text="알람음 설정", command=open_alarm_sound_window, font=("Helvetica", 12), padx=10, pady=5)
+alarm_setting_button.place(relx=0.5, rely=0.1, anchor="center")
+
+send_message_button = tk.Button(root, text="망신문자 보낼 사람", command=open_send_message_window, font=("Helvetica", 12), padx=10, pady=5)
+send_message_button.place(relx=0.5, rely=0.9, anchor="center")
+
+alarm_list_button = tk.Button(root, text="내 알람", command=open_alarm_list_window, font=("Helvetica", 12), padx=10, pady=5)
+alarm_list_button.place(relx=0.5, rely=0.6, anchor="center")
+
+root.mainloop()
